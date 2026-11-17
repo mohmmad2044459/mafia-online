@@ -81,6 +81,7 @@ const handleAction = async (socket, action) => {
       if (p.role === 'mafia' && (target.role === 'mafia' || target.id === p.id)) throw new Error('لا يمكنك اختيار هذا اللاعب');
       if (p.role === 'detective' && target.id === p.id) throw new Error('لا يمكنك التحقيق مع نفسك');
       if (!['mafia', 'doctor', 'detective'].includes(p.role)) throw new Error('ليس لديك إجراء ليلي');
+      if (p.role === 'doctor' && p.lastProtectedId === target.id) throw new Error(target.id === p.id ? 'لا يمكنك حماية نفسك ليلتين متتاليتين' : 'لا يمكنك حماية نفس اللاعب ليلتين متتاليتين');
       g.nightActions[p.id] = target.id;
       const special = alivePlayers(g).filter(x => ['mafia', 'doctor', 'detective'].includes(x.role));
       if (special.every(x => g.nightActions[x.id])) { resolveNight(g); syncTimer(g); }
@@ -93,7 +94,7 @@ const handleAction = async (socket, action) => {
     } else if (action.type === 'game:reset' && host && ['finished', 'lobby'].includes(g.phase)) {
       clearTimer(g.code); g.phase = 'lobby'; g.day = 0; g.winner = null; g.votes = {}; g.nightActions = {}; g.voteEndsAt=null;g.voteRound=0;g.announcement=null; g.defensePlayerId = null; g.defenseEndsAt=null; g.speakerEndsAt=null; g.speakerId=null; g.log = [];
       for(const [id,player] of g.players)if(!player.online)g.players.delete(id);
-      for (const player of g.players.values()) { player.role = null; player.alive = true; player.revealed = false; player.results = []; }
+      for (const player of g.players.values()) { player.role = null; player.lastProtectedId = null; player.alive = true; player.revealed = false; player.results = []; }
       await Room.updateOne({ code: g.code }, { status: 'waiting' });
     } else if (action.type === 'chat:message' && p?.alive && ['discussion', 'defense'].includes(g.phase)) {
       const allowed = g.phase === 'discussion' ? g.speakerId === p.id : g.defensePlayerId === p.id;

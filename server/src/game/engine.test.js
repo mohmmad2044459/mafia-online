@@ -18,3 +18,9 @@ test('successful protection is announced identically to all without disclosing p
 test('assassination names the victim and reveals the card to all, no target is a distinct result',()=>{const g=game();g.nightActions={'0':'2'};resolveNight(g);assert.equal(g.announcement.kind,'assassinated');assert.equal(g.announcement.playerId,'2');assert.equal(g.players.get('2').alive,false);const peaceful=game();resolveNight(peaceful);assert.equal(peaceful.announcement.kind,'peaceful');});
 test('last mafia elimination ends game after repeated vote',()=>{const g=game();beginVote(g);voteFor(g,'0');finishDefense(g);voteFor(g,'0');assert.equal(g.phase,'finished');assert.equal(g.winner,'citizens');assert.equal(phaseDeadline(g),null);});
 test('camera state is shared; offline player cannot transmit or report camera on',()=>{const g=game();g.players.get('0').cameraOn=true;assert.equal(publicState(g,'1').players[0].cameraOn,true);g.phase='discussion';g.speakerId='0';g.players.get('0').online=false;assert.equal(publicState(g,'0').me.canSpeak,false);assert.equal(publicState(g,'1').players[0].cameraOn,false);});
+test('doctor cannot protect same player (or self) two nights in a row, but can again after a gap',()=>{
+  const g=game();g.players.get('1').role='doctor';g.players.get('1').lastProtectedId=null;
+  g.nightActions={'1':'2'};resolveNight(g);assert.equal(g.players.get('1').lastProtectedId,'2');assert.equal(publicState(g,'1').me.lastProtectedId,'2');assert.equal(publicState(g,'2').me.lastProtectedId,null);
+  g.nightActions={'1':'1'};resolveNight(g);assert.equal(g.players.get('1').lastProtectedId,'1');
+  g.nightActions={};resolveNight(g);assert.equal(g.players.get('1').lastProtectedId,null);
+});

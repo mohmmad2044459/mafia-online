@@ -26,7 +26,7 @@ export function publicState(g, userId) {
     defensePlayerId: g.defensePlayerId, defenseEndsAt: g.defenseEndsAt,
     me: me ? { id: me.id, role: me.role, alive: me.alive, results: me.results || [],
       canSpeak: me.online && me.alive && (g.phase === 'lobby' || (g.phase === 'discussion' && g.speakerId === me.id) || (g.phase === 'defense' && g.defensePlayerId === me.id)),
-      nightAction: g.nightActions[me.id] || null, myVote: g.votes[me.id] || null } : null };
+      nightAction: g.nightActions[me.id] || null, lastProtectedId: me.role === 'doctor' ? (me.lastProtectedId || null) : null, myVote: g.votes[me.id] || null } : null };
 }
 export function checkWinner(g) {
   const mafia = alivePlayers(g).filter(p => p.role === 'mafia').length;
@@ -43,7 +43,7 @@ export function startGame(g) {
   if (c.mafia < 1 || c.mafia * 2 >= players.length || c.mafia + c.doctor + c.detective > players.length) throw new Error('توزيع الأدوار غير مناسب لعدد اللاعبين');
   const roles = shuffle([...Array(c.mafia).fill('mafia'), ...Array(c.doctor).fill('doctor'), ...Array(c.detective).fill('detective'), ...Array(players.length - c.mafia - c.doctor - c.detective).fill('citizen')]);
   players.forEach((p, i) => { p.role = roles[i]; p.alive = true; p.revealed = false; p.results = []; });
-  g.announcement=null; g.voteRound=0; g.voteEndsAt=null; g.defensePlayerId=null; g.defenseEndsAt=null; g.phase = 'night'; g.day = 1; g.winner = null; g.votes = {}; g.nightActions = {}; addLog(g, 'بدأت اللعبة. حان الليل.');
+  g.announcement=null; g.voteRound=0; g.voteEndsAt=null; g.defensePlayerId=null; g.defenseEndsAt=null; for (const pl of g.players.values()) pl.lastProtectedId = null; g.phase = 'night'; g.day = 1; g.winner = null; g.votes = {}; g.nightActions = {}; addLog(g, 'بدأت اللعبة. حان الليل.');
 }
 export function resolveNight(g) {
   const mafiaVotes = {};
@@ -64,6 +64,7 @@ export function resolveNight(g) {
   } else {
     announce(g, 'peaceful', 'انتهى الليل دون اغتيال', 'لم تُنفّذ المافيا عملية اغتيال هذه الليلة.');
   }
+  for (const pl of g.players.values()) if (pl.role === 'doctor') pl.lastProtectedId = pl.alive ? (g.nightActions[pl.id] || null) : null;
   g.nightActions = {};
   if (!checkWinner(g)) { g.phase = 'discussion'; g.speakerIndex = 0; advanceSpeaker(g); }
 }
