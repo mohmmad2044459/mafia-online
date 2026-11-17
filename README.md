@@ -56,3 +56,7 @@ Angular 20 standalone · Tailwind · Express · Socket.IO · MongoDB
 الإعداد الافتراضي يستخدم STUN فقط. الشبكات المقيدة تحتاج TURN في iceServers بملف البيئة، ويُفضّل بيانات اعتماد قصيرة الأجل من الخادم.
 الاتصال Mesh قد يثقل مع عدد كبير من الكاميرات. قواعد الصوت في العملاء وليست خادم وسائط يفرض الكتم ضد عميل معدل.
 حالة اللعبة في ذاكرة عملية خادم واحدة وتُفقد عند إعادة تشغيله.
+
+
+
+mongodb+srv://mafia:EMqIipzmtLAPojHJ@cluster0.fc4qrlb.mongodb.net/mafia_online?appName=Cluster0
