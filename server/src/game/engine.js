@@ -1,3 +1,7 @@
+// Phase lengths (ms): normal speaker 1:15, vote 0:45, defense 1:30.
+export const SPEAK_MS = 75000;
+export const VOTE_MS = 45000;
+export const DEFENSE_MS = 90000;
 const ROLE_NAMES = { mafia: 'مافيا', doctor: 'الدكتور', detective: 'المحقق', citizen: 'مواطن' };
 const shuffle = (items) => { const a = [...items]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
@@ -68,11 +72,11 @@ export function advanceSpeaker(g) {
   while (g.speakerIndex < speakers.length && !speakers[g.speakerIndex].online) g.speakerIndex += 1;
   if (g.speakerIndex >= speakers.length) { g.speakerId = null; g.speakerEndsAt = null; beginVote(g); return; }
   g.speakerId = speakers[g.speakerIndex].id;
-  g.speakerEndsAt = Date.now() + 45000;
+  g.speakerEndsAt = Date.now() + SPEAK_MS;
 }
 // Each ballot is identified by a round number, so delayed clicks cannot vote in a later round.
 export function beginVote(g) {
-  g.phase = 'vote'; g.voteRound += 1; g.votes = {}; g.voteEndsAt = Date.now() + 45000;
+  g.phase = 'vote'; g.voteRound += 1; g.votes = {}; g.voteEndsAt = Date.now() + VOTE_MS;
   g.defenseEndsAt = null;
   addLog(g, g.defensePlayerId ? 'انتهى الدفاع. صوّتوا مجددًا على جميع اللاعبين.' : 'بدأ التصويت.');
 }
@@ -103,8 +107,8 @@ export function resolveVote(g) {
     g.defenseEndsAt=null;
     if(!checkWinner(g))finishDay(g);
   } else {
-    g.phase='defense';g.defensePlayerId=target.id;g.defenseEndsAt=Date.now()+60000;
-    addLog(g,`${target.name} لديه دقيقة للدفاع، ثم يصوّت الجميع مجددًا.`);
+    g.phase='defense';g.defensePlayerId=target.id;g.defenseEndsAt=Date.now()+DEFENSE_MS;
+    addLog(g,`${target.name} لديه دقيقة ونصف للدفاع، ثم يصوّت الجميع مجددًا.`);
   }
 }
 export function announce(g, kind, title, message, player=null) {
