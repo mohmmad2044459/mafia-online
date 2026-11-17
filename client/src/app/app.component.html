@@ -1,0 +1,73 @@
+<main class="app-shell">
+  <header class="app-header"><a class="wordmark" href="/">مافيا<span>ONLINE / غرفة الأصدقاء</span></a><button *ngIf="user" class="text-button" (click)="logout()">تسجيل الخروج</button><span *ngIf="!user" class="edition">لعبة جماعية · 4–20 لاعب</span></header>
+  <div *ngIf="error" class="alert" role="alert">{{error}} <button class="text-button" (click)="error=''">إغلاق</button></div>
+  <div *ngIf="notice" class="notice" role="status">{{notice}} <button class="text-button" (click)="notice=''">إغلاق</button></div>
+  <section *ngIf="!user" class="welcome">
+    <p class="eyebrow">ليلة واحدة. ولا أحد فوق الشك.</p><h1>بين أصحابك،<br>في حدا <em>مافيا.</em></h1><p class="intro">اسمع القصة. راقب التفاصيل. اختار مين تصدّق.</p>
+    <button class="primary" (click)="loginGoogle()">الدخول باستخدام Google <span dir="ltr">↗</span></button><p class="caption">الكاميرا والمايك اختياريان.</p>
+    <div class="rules"><div><b>01</b><h3>اعرف دورك</h3><p>هويتك سرّك. لكل دور مهمة.</p></div><div><b>02</b><h3>اسمع الجميع</h3><p>45 ثانية لكل لاعب دون مقاطعة.</p></div><div><b>03</b><h3>خذ قرارك</h3><p>تصويت، دقيقة دفاع، ثم تصويت جديد.</p></div></div>
+  </section>
+  <section *ngIf="user && !state" class="home">
+    <p class="eyebrow">أهلًا {{user.name}}</p><h1>وين السهرة؟</h1><p class="subtle">انضم لأصحابك أو جهّز غرفة جديدة.</p>
+    <div class="home-grid"><form class="panel" (ngSubmit)="joinRoom()"><h2>عندك كود؟</h2><label for="room-code">كود الغرفة</label><input id="room-code" name="code" class="field code-input" dir="ltr" maxlength="6" autocomplete="off" placeholder="A1B2C3" [(ngModel)]="roomCode"><button class="primary full" [disabled]="busy || roomCode.trim().length!==6">{{busy?'جارٍ الاتصال…':'انضم للغرفة'}}</button></form>
+    <div class="panel"><h2>ابدأ سهرة جديدة</h2><label for="capacity">عدد المقاعد</label><select id="capacity" class="field" [(ngModel)]="newRoomMax"><option *ngFor="let n of [6,8,10,12,16,20]" [ngValue]="n">{{n}} لاعبين</option></select><label class="check"><input type="checkbox" [(ngModel)]="isPrivate">غرفة خاصة بالكود</label><button class="secondary full" [disabled]="busy" (click)="createRoom()">إنشاء غرفة</button></div></div>
+  </section>
+  <section *ngIf="state as s" class="room" [class.view-game]="roomTab==='game'" [class.view-players]="roomTab==='players'" [class.view-more]="roomTab==='more'">
+    <div class="room-bar"><button class="room-code" (click)="copyRoomCode()" aria-label="نسخ كود الغرفة"><span>الغرفة</span><b dir="ltr">{{s.code}}</b><span>نسخ</span></button><span class="connection" [class.offline]="!connected">{{connected?'متصل':'إعادة الاتصال…'}}</span><button class="text-button" (click)="leaveConfirm=true">مغادرة</button></div>
+    <div *ngIf="leaveConfirm" class="alert" role="alert">تريد مغادرة الغرفة؟<button class="secondary" (click)="leaveRoom();leaveConfirm=false">مغادرة</button><button class="text-button" (click)="leaveConfirm=false">بقاء</button></div>
+    <section *ngIf="visibleAnnouncement as a" class="round-announcement" [class.saved]="a.kind==='protected'" role="status" aria-live="polite">
+      <div><span class="caption">إعلان للجميع · الجولة {{a.day}}</span><h2>{{a.title}}</h2><p>{{a.message}}</p><strong *ngIf="a.role" class="revealed-card">البطاقة المكشوفة: {{roleLabel(a.role)}}</strong></div>
+      <button class="text-button" aria-label="إخفاء الإعلان" (click)="dismissedAnnouncement=a.id">فهمت</button>
+    </section>
+    <nav class="room-tabs" aria-label="عرض الغرفة">
+      <button [attr.aria-pressed]="roomTab==='game'" (click)="roomTab='game'">الجولة</button>
+      <button [attr.aria-pressed]="roomTab==='players'" (click)="roomTab='players'">اللاعبون <small>{{s.players.length}}</small></button>
+      <button [attr.aria-pressed]="roomTab==='more'" (click)="roomTab='more'">بطاقتي والمزيد</button>
+    </nav>
+    <div class="room-layout">
+      <div class="main-column">
+        <section class="stage" aria-label="المرحلة الحالية">
+          <div class="stage-top"><span class="eyebrow">{{s.day?'الجولة '+s.day:'قبل البداية'}} / {{phaseName}}</span><span class="badge">{{aliveCount}} لاعبين {{s.phase==='lobby'?'في الغرفة':'أحياء'}}</span></div>
+          <ng-container [ngSwitch]="s.phase">
+            <div *ngSwitchCase="'lobby'"><h1>الطاولة عم تكتمل.</h1><p class="subtle">{{s.isHost?'شارك الكود مع أصحابك، وابدأ لما تكونوا جاهزين.':'جهّز صوتك وكاميرتك. المضيف يبدأ اللعبة.'}}</p><div class="lobby-summary"><b>{{s.players.length}} <small>/ {{s.maxPlayers}}</small></b><span>{{s.players.length<4?'نحتاج '+(4-s.players.length)+' لاعبين إضافيين':'العدد مناسب للبداية'}}</span></div><button *ngIf="s.isHost" class="primary full" [disabled]="!connected || !!configIssue" (click)="action('game:start')">ابدأ اللعبة</button><p *ngIf="s.isHost && configIssue" class="caption">{{configIssue}}</p></div>
+            <div *ngSwitchCase="'night'"><h1>المدينة نايمة.</h1><p class="subtle">{{nightInstruction}}</p><div *ngIf="s.me?.alive && s.me?.role!=='citizen'" class="choices"><ng-container *ngFor="let p of s.players"><button *ngIf="p.alive" class="choice" [class.selected]="s.me?.nightAction===p.id" [disabled]="!connected || (p.id===s.me?.id && s.me?.role!=='doctor') || (s.me?.role==='mafia' && p.role==='mafia')" (click)="action('night:act',{targetId:p.id})">{{p.name}}<span>{{s.me?.nightAction===p.id?'تم الاختيار':'اختيار'}}</span></button></ng-container></div><p *ngIf="s.me?.nightAction" class="selection-note" role="status">تم حفظ اختيارك. انتظر بقية الأدوار.</p></div>
+            <ng-container *ngSwitchCase="'discussion'"><ng-container *ngTemplateOutlet="speech"></ng-container><div class="turn-order"><span class="caption">ترتيب الحديث</span><div class="turn-list"><span *ngFor="let p of speakingOrder;let i=index" [class.current]="p.id===s.speakerId" [class.absent]="!p.online"><small>{{i+1}}</small>{{p.name}}{{!p.online?' · غائب':''}}</span></div></div></ng-container>
+            <ng-container *ngSwitchCase="'defense'"><ng-container *ngTemplateOutlet="speech"></ng-container></ng-container>
+            <div *ngSwitchCase="'vote'">
+              <div class="speaker-heading"><div><p class="caption">تصويت {{s.voteRound}} · تلقائي</p><h1>{{s.defensePlayerId?'بعد الدفاع، مين بتختار؟':'مين بتشك فيه؟'}}</h1></div><div class="countdown" role="timer">{{secondsLeft}}<small>ثانية</small></div></div>
+              <p class="subtle" *ngIf="!s.defensePlayerId">صاحب أعلى الأصوات يأخذ دقيقة دفاع، ثم نصوّت من جديد.</p>
+              <p class="subtle" *ngIf="s.defensePlayerId">إذا تصدّر {{defensePlayer?.name}} مجددًا يُخرج وتنكشف بطاقته. لاعب آخر؟ يأخذ دقيقة دفاع.</p>
+              <div class="vote-progress" role="status">{{s.voteCount}} / {{s.voteTotal}} صوّتوا <span>ينتهي عند اكتمال الأصوات أو الوقت</span></div>
+              <div class="choices"><ng-container *ngFor="let p of s.players"><button *ngIf="p.alive" class="choice" [class.selected]="s.me?.myVote===p.id" [disabled]="!connected || !s.me?.alive || p.id===s.me?.id || secondsLeft===0" (click)="castVote(p.id)">{{p.name}}<span>{{voteCounts[p.id]||0}} أصوات {{s.me?.myVote===p.id?'✓':''}}</span></button></ng-container></div>
+              <button class="secondary full" [disabled]="!connected || !s.me?.alive || secondsLeft===0" (click)="castVote('skip')">{{s.me?.myVote==='skip'?'تم تسجيل امتناعك ✓':'امتنع عن التصويت'}}</button>
+              <p class="caption">التعادل أو عدم اختيار أحد: لا إخراج، وتبدأ ليلة جديدة. تستطيع تعديل صوتك قبل إغلاق الجولة.</p>
+            </div>
+            <div *ngSwitchCase="'finished'"><h1>{{s.winner==='mafia'?'المافيا كسبت.':'المواطنون كسبوا.'}}</h1><p class="subtle">انكشفت الأدوار. مين كان شكّك فيه بمحلّه؟</p><button *ngIf="s.isHost" class="primary full" (click)="action('game:reset')">لعبة جديدة بنفس الغرفة</button></div>
+          </ng-container>
+          <ng-template #speech><div class="speaker-heading"><div><p class="caption">{{s.phase==='defense'?'دقيقة الدفاع':'يتحدث الآن'}}</p><h1>{{s.phase==='defense'?defensePlayer?.name:currentSpeaker?.name}}</h1></div><div class="countdown" [class.urgent]="secondsLeft<=10" role="timer">{{secondsLeft}}<small>ثانية</small></div></div><div class="time-track"><span [style.width.%]="secondsLeft/(s.phase==='defense'?60:45)*100"></span></div><p class="subtle">{{s.me?.canSpeak?'هذا وقتك. احكِ أو اكتب رسالتك.':'اسمع اللاعب. المايك يفتح تلقائيًا عندما يحين دورك إذا فعّلته.'}}</p><form *ngIf="s.me?.canSpeak" class="message-form" (ngSubmit)="sendChat()"><input class="field" name="message" maxlength="300" [(ngModel)]="chatText" placeholder="رسالتك للطاولة" aria-label="رسالتك للطاولة"><button class="secondary" [disabled]="!connected || !chatText.trim()">إرسال</button></form></ng-template>
+          <div *ngIf="s.me && !s.me.alive && s.phase!=='finished'" class="spectator">أنت مشاهد الآن. يمكنك متابعة الجولة دون التصويت.</div>
+        </section>
+        <section class="table-section"><div class="section-heading"><h2>حول الطاولة</h2><button class="text-button" (click)="playMedia()">تشغيل الصوت والفيديو</button></div>
+          <div class="player-grid"><article *ngFor="let p of s.players;trackBy:trackPlayer" class="seat" [class.speaking]="s.speakerId===p.id && s.phase==='discussion' || s.defensePlayerId===p.id && s.phase==='defense'" [class.eliminated]="!p.alive">
+            <div class="seat-media"><div class="avatar-placeholder"><img *ngIf="p.avatar" [src]="p.avatar" alt="" referrerpolicy="no-referrer"><span *ngIf="!p.avatar">{{p.name.charAt(0)}}</span></div>
+              <video *ngIf="p.id===user?.id" #localVideo autoplay [muted]="true" playsinline [hidden]="!cameraOn"></video>
+              <video *ngIf="p.id!==user?.id && remoteStream(p.id) as stream" autoplay playsinline [srcObject]="stream" [hidden]="!p.cameraOn" [muted]="remoteMuted(p.id)" (click)="$any($event.target).play()" aria-label="اضغط لتشغيل فيديو اللاعب"></video>
+              <span *ngIf="p.id!==user?.id && p.cameraOn && mediaStatus[p.id]!=='connected'" class="camera-wait">الكاميرا مفتوحة · جارٍ الاتصال</span><span class="seat-status">{{!p.alive?'خارج الجولة':!p.online?'غير متصل':s.speakerId===p.id && s.phase==='discussion'?'يتحدث الآن':s.defensePlayerId===p.id && s.phase==='defense'?'يدافع الآن':p.id===s.hostId?'المضيف':'لاعب'}}</span>
+            </div><div class="seat-name"><b>{{p.name}}</b><span>{{p.id===user?.id?'أنت':p.role && (!p.alive || s.phase==='finished')?roleLabel(p.role):''}}</span></div><div class="seat-tools"><span>{{p.id===user?.id?(cameraOn?'كاميرا مفتوحة':'كاميرا مغلقة'):(p.cameraOn?'كاميرا مفتوحة':'كاميرا مغلقة')}}</span><button *ngIf="p.id!==user?.id && p.online" class="text-button" (click)="reconnectPeer(p.id)">إعادة الاتصال</button></div></article></div>
+        </section>
+      </div>
+      <aside class="side-column">
+        <details *ngIf="s.me?.role" class="panel private-role"><summary>بطاقتك السرية <span>اضغط للكشف</span></summary><h2>{{roleLabel(s.me?.role)}}</h2><p class="subtle">{{roleDescription}}</p><div *ngFor="let r of s.me?.results" class="result">الجولة {{r.day}} · {{r.name}}: {{r.isMafia?'مافيا':'ليس مافيا'}}</div></details>
+        <details *ngIf="s.isHost && ['lobby','night','discussion'].includes(s.phase)" class="panel"><summary>إدارة الغرفة <span>للمضيف</span></summary>
+          <ng-container *ngIf="s.phase==='lobby'"><p class="caption">وزّع الأدوار؛ الباقي مواطنون.</p><div class="role-inputs"><label>مافيا<input class="field" type="number" min="1" max="5" [value]="s.rolesConfig.mafia" (change)="updateConfig('mafia',$any($event.target).value)"></label><label>طبيب<input class="field" type="number" min="0" max="5" [value]="s.rolesConfig.doctor" (change)="updateConfig('doctor',$any($event.target).value)"></label><label>محقق<input class="field" type="number" min="0" max="5" [value]="s.rolesConfig.detective" (change)="updateConfig('detective',$any($event.target).value)"></label></div><p class="caption">مواطنون: {{citizenCount}}</p><button class="text-button" (click)="action('game:reset')">إزالة الغائبين من الردهة</button></ng-container>
+          <button *ngIf="s.phase==='night'" class="secondary full" [disabled]="!connected" (click)="action('host:resolve-night')">إنهاء الليل</button><button *ngIf="s.phase==='discussion'" class="secondary full" [disabled]="!connected" (click)="action('speech:next')">تجاوز المتحدث الحالي</button>
+        </details>
+        <details class="panel"><summary>حديث الطاولة <span>{{chat.length}} رسائل</span></summary><div class="feed"><p *ngIf="!chat.length" class="caption">رسائل المتحدثين تظهر هنا.</p><p *ngFor="let m of chat"><b>{{m.name}}</b><span>{{m.message}}</span></p></div></details>
+        <details class="panel"><summary>سجل الجولة <span>{{s.log.length}} أحداث</span></summary><div class="feed"><p *ngFor="let item of s.log.slice().reverse()"><small>الجولة {{item.day}}</small><span>{{item.text}}</span></p></div></details>
+        <details class="panel"><summary>الصوت والاتصال</summary><p class="caption">الصوت متاح في الردهة. أثناء الجولة، يُفتح للمتحدث فقط. إذا لم يبدأ فيديو اللاعب اضغط عليه.</p><button class="secondary full" [disabled]="!connected" (click)="reconnectMedia()">إعادة اتصال الوسائط</button></details>
+      </aside>
+    </div>
+    <div class="media-dock"><span class="dock-status">{{mediaBusy?'جارٍ فتح الجهاز…':micStatus}}</span><div><button class="secondary" [class.enabled]="micOn" [attr.aria-pressed]="micOn" [disabled]="mediaBusy || !connected" (click)="toggleMic()">{{micOn?'إغلاق المايك':'فتح المايك'}}</button><button class="secondary" [class.enabled]="cameraOn" [attr.aria-pressed]="cameraOn" [disabled]="mediaBusy || !connected" (click)="toggleCamera()">{{cameraOn?'إغلاق الكاميرا':'فتح الكاميرا'}}</button></div></div>
+  </section>
+  <footer>مافيا / سهرة مع أصحابك</footer>
+</main>
