@@ -10,7 +10,7 @@ import User from './models/User.js';
 import Room from './models/Room.js';
 import authRoutes from './routes/auth.routes.js';
 import roomRoutes from './routes/rooms.routes.js';
-import { createGameState, publicState, alivePlayers, addLog, startGame, resolveNight, advanceSpeaker, castVote, phaseDeadline, advanceTimedPhase } from './game/engine.js';
+import { createGameState, publicState, isMafia, isSilenced, revealMayor, alivePlayers, addLog, startGame, resolveNight, advanceSpeaker, castVote, phaseDeadline, advanceTimedPhase } from './game/engine.js';
 
 const required = ['MONGO_URI', 'JWT_SECRET', 'GOOGLE_CLIENT_ID'];
 for (const key of required) if (!process.env[key]) { console.error(`Missing ${key} in .env`); process.exit(1); }
@@ -29,7 +29,7 @@ const games = new Map();
 const roomLoads = new Map();
 const socketsByUser = new Map();
 const timers = new Map();
-const emitState = (g) => { for (const [uid, sockets] of socketsByUser) if ([...sockets].some(s => s.data.roomCode === g.code)) [...sockets].filter(s=>s.data.roomCode===g.code).forEach(s=>s.emit('game:state', publicState(g, uid))); };
+const emitState = (g) => { for(const uid of g.players.keys()){const sockets=[...(socketsByUser.get(uid)||[])].filter(s=>s.data.roomCode===g.code);if(sockets.length){const state=publicState(g,uid);for(const socket of sockets)socket.emit('game:state',state);}} };
 const roomGame = async (code) => {
   const normalized = String(code || '').toUpperCase();
   if (games.has(normalized)) return games.get(normalized);
@@ -74,16 +74,17 @@ const handleAction = async (socket, action) => {
       syncTimer(g); emitState(g); return;
     }
     if (action.type === 'game:config' && host && g.phase === 'lobby') {
-      for (const key of ['mafia', 'doctor', 'detective']) if (Number.isInteger(action.config?.[key])) g.rolesConfig[key] = Math.max(0, Math.min(5, action.config[key]));
+      for (const key of ['mafia', 'doctor', 'detective', 'mayor']) if (Number.isInteger(action.config?.[key])) g.rolesConfig[key] = Math.max(0, Math.min(key==='mayor'?1:5, action.config[key]));
+    } else if (action.type === 'mayor:reveal') { revealMayor(g,p.id);
     } else if (action.type === 'night:act' && p?.alive && g.phase === 'night') {
       const target = g.players.get(action.targetId);
       if (!target?.alive) throw new Error('اللاعب المختار غير متاح');
-      if (p.role === 'mafia' && (target.role === 'mafia' || target.id === p.id)) throw new Error('لا يمكنك اختيار هذا اللاعب');
+      if (['mafia','mafia_boss'].includes(p.role) && (isMafia(target.role) || target.id === p.id)) throw new Error('لا يمكنك اختيار هذا اللاعب');
       if (p.role === 'detective' && target.id === p.id) throw new Error('لا يمكنك التحقيق مع نفسك');
-      if (!['mafia', 'doctor', 'detective'].includes(p.role)) throw new Error('ليس لديك إجراء ليلي');
+      if (!['mafia', 'mafia_boss', 'silencer', 'doctor', 'detective'].includes(p.role)) throw new Error('ليس لديك إجراء ليلي');
       if (p.role === 'doctor' && p.lastProtectedId === target.id) throw new Error(target.id === p.id ? 'لا يمكنك حماية نفسك ليلتين متتاليتين' : 'لا يمكنك حماية نفس اللاعب ليلتين متتاليتين');
       g.nightActions[p.id] = target.id;
-      const special = alivePlayers(g).filter(x => ['mafia', 'doctor', 'detective'].includes(x.role));
+      const special = alivePlayers(g).filter(x => ['mafia', 'mafia_boss', 'silencer', 'doctor', 'detective'].includes(x.role));
       if (special.every(x => g.nightActions[x.id])) { resolveNight(g); syncTimer(g); }
     } else if (action.type === 'host:resolve-night' && host && g.phase === 'night') {
       resolveNight(g); syncTimer(g);
@@ -94,7 +95,7 @@ const handleAction = async (socket, action) => {
     } else if (action.type === 'game:reset' && host && ['finished', 'lobby'].includes(g.phase)) {
       clearTimer(g.code); g.phase = 'lobby'; g.day = 0; g.winner = null; g.votes = {}; g.nightActions = {}; g.voteEndsAt=null;g.voteRound=0;g.announcement=null; g.defensePlayerId = null; g.defenseEndsAt=null; g.speakerEndsAt=null; g.speakerId=null; g.log = [];
       for(const [id,player] of g.players)if(!player.online)g.players.delete(id);
-      for (const player of g.players.values()) { player.role = null; player.lastProtectedId = null; player.alive = true; player.revealed = false; player.results = []; }
+      for (const player of g.players.values()) { player.silencedDay = null; player.role = null; player.lastProtectedId = null; player.alive = true; player.revealed = false; player.results = []; }
       await Room.updateOne({ code: g.code }, { status: 'waiting' });
     } else if (action.type === 'chat:message' && p?.alive && ['discussion', 'defense'].includes(g.phase)) {
       const allowed = g.phase === 'discussion' ? g.speakerId === p.id : g.defensePlayerId === p.id;
@@ -146,7 +147,9 @@ io.on('connection', socket => {
   socket.on('media:state', (payload={}) => {
     const g=games.get(socket.data.roomCode),p=g?.players.get(user.id);
     if(!p)return;
-    p.cameraOn=payload?.cameraOn===true;p.micOn=payload?.micOn===true;
+    const cameraOn=payload?.cameraOn===true,micOn=payload?.micOn===true && !isSilenced(g,p);
+    if(p.cameraOn===cameraOn && p.micOn===micOn)return;
+    p.cameraOn=cameraOn;p.micOn=micOn;
     emitState(g);
   });
   socket.on('game:action', action => handleAction(socket, action));

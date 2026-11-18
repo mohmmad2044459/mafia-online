@@ -75,3 +75,12 @@ html,body{overflow-x:clip}
 @media(min-width:640px) and (max-width:999px){.view-game .player-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;padding-bottom:0}.view-game .seat{flex:initial}}
 .feed{scrollbar-width:thin;scrollbar-color:var(--color-ink-500) transparent}
 ::selection{background:var(--color-brass-400);color:var(--color-brass-950)}
+
+/* Mobile layout uses the existing palette and typography. */
+.mayor-banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:16px;margin-block:12px;border:1px solid var(--color-brass-400);border-radius:16px}
+.room-tabs{position:sticky;top:0;z-index:10;background:var(--color-ink-950)}
+.seat-name b,.choice{overflow-wrap:anywhere;min-width:0}
+button,input,select{touch-action:manipulation}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--color-brass-400);outline-offset:3px}
+@media(max-width:639px){.field{font-size:16px}.media-dock{padding-bottom:calc(12px + env(safe-area-inset-bottom))}.room{padding-bottom:130px}.choices{grid-template-columns:repeat(2,minmax(0,1fr))}.choice{min-height:52px;padding:12px}.role-inputs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.mayor-banner .primary{width:100%}.room-tabs button{min-height:48px}.room-bar{gap:8px;flex-wrap:wrap}.stage{padding:16px}.speaker-heading h1{overflow-wrap:anywhere;font-size:24px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

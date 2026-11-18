@@ -7,9 +7,9 @@ import { environment } from '../environments/environment';
 
 declare global { interface Window { google?: any; } }
 interface User { id: string; name: string; email: string; avatar: string; }
-interface Player { cameraOn:boolean; micOn:boolean; id: string; name: string; avatar: string; alive: boolean; online: boolean; role: string | null; }
+interface Player { silenced:boolean; revealed:boolean; voteWeight:number; cameraOn:boolean; micOn:boolean; id: string; name: string; avatar: string; alive: boolean; online: boolean; role: string | null; }
 interface SignalPayload { restart?: boolean; sessionId?:string; fromId: string; description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit; }
-interface GameState { announcement:{id:number;day:number;kind:string;title:string;message:string;role:string|null}|null; voteRound:number; voteEndsAt:number|null; voteCount:number; voteTotal:number; serverTime: number; code: string; phase: string; day: number; maxPlayers: number; winner: string | null; hostId: string; isHost: boolean; players: Player[]; rolesConfig: {mafia:number;doctor:number;detective:number}; log: {text:string;at:number;day:number}[]; votes: Record<string,string>|null; speakerId: string|null; speakerEndsAt: number|null; defensePlayerId: string|null; defenseEndsAt: number|null; me: {id:string;role:string|null;alive:boolean;results:{day:number;name:string;isMafia:boolean}[];canSpeak:boolean;nightAction:string|null;myVote:string|null}|null; }
+interface GameState { announcement:{id:number;day:number;kind:string;title:string;message:string;role:string|null}|null; voteRound:number; voteEndsAt:number|null; voteCount:number; voteTotal:number; serverTime: number; code: string; phase: string; day: number; maxPlayers: number; winner: string | null; hostId: string; isHost: boolean; players: Player[]; rolesConfig: {mafia:number;doctor:number;detective:number;mayor:number}; log: {text:string;at:number;day:number}[]; votes: Record<string,string>|null; speakerId: string|null; speakerEndsAt: number|null; defensePlayerId: string|null; defenseEndsAt: number|null; me: {silenced:boolean;revealed:boolean;lastProtectedId:string|null;id:string;role:string|null;alive:boolean;results:{day:number;name:string;isMafia:boolean}[];canSpeak:boolean;nightAction:string|null;myVote:string|null}|null; }
 
 @Component({ selector: 'app-root', standalone: true, imports: [CommonModule, FormsModule, HttpClientModule], templateUrl: './app.component.html' })
 export class AppComponent implements OnDestroy, AfterViewChecked {
@@ -35,25 +35,25 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
   castVote(targetId:string):void{this.action('vote:cast',{targetId,voteRound:this.state?.voteRound});}
   publishMedia():void{this.socket?.emit('media:state',{cameraOn:this.cameraOn,micOn:this.micOn});}
   async playMedia():Promise<void>{
-    const videos=document.querySelectorAll<HTMLVideoElement>('video');
+    const videos=document.querySelectorAll<HTMLMediaElement>('video,audio');
     const results=await Promise.allSettled(Array.from(videos).map(v=>v.play()));
     this.notice=results.some(r=>r.status==='rejected')?'تعذر تشغيل بعض الوسائط. جرّب إعادة الاتصال.':'تم تشغيل الصوت والفيديو المتاح.';
   }
   readonly phases = [{id:'lobby',label:'التجهيز'},{id:'night',label:'الليل'},{id:'discussion',label:'النقاش'},{id:'vote',label:'التصويت'},{id:'defense',label:'الدفاع'},{id:'finished',label:'النتيجة'}];
   trackPlayer(_index:number, player:Player):string { return player.id; }
   remoteStream(id:string):MediaStream|null { return id===this.user?.id?null:this.remoteVideos.find(v=>v.id===id)?.stream||null; }
-  roleLabel(role:string|null|undefined):string { return ({mafia:'المافيا',doctor:'الطبيب',detective:'المحقق',citizen:'المواطن'} as Record<string,string>)[role||'']||''; }
-  get roleDescription():string { return ({mafia:'اختر ضحية في الليل وحافظ على هويتك سرًا خلال النقاش.',doctor:'احمِ لاعبًا كل ليلة. يمكنك اختيار نفسك.',detective:'تحقق من هوية لاعب كل ليلة؛ النتيجة تظهر لك وحدك.',citizen:'راقب النقاش وصوّت لاكتشاف المافيا. ليس لديك إجراء ليلي.'} as Record<string,string>)[this.state?.me?.role||'']||''; }
+  roleLabel(role:string|null|undefined):string { return ({mafia:'المافيا',mafia_boss:'زعيم المافيا',silencer:'المُسكِت',mayor:'العمدة',doctor:'الطبيب',detective:'المحقق',citizen:'المواطن'} as Record<string,string>)[role||'']||''; }
+  get roleDescription():string { return ({mayor:'اكشف بطاقتك للجميع في أي مرحلة لتصبح قوة صوتك ثلاثة أصوات حتى نهاية اللعبة.',silencer:'اختر أي لاعب لإسكات ميكروفونه حتى نهاية الجولة؛ يبقى قادرًا على التصويت.',mafia_boss:'اختر ضحية للاغتيال ليلًا وتعاون مع المافيا.',mafia:'اختر ضحية في الليل وحافظ على هويتك سرًا خلال النقاش.',doctor:'احمِ لاعبًا كل ليلة. يمكنك اختيار نفسك.',detective:'تحقق من هوية لاعب كل ليلة؛ النتيجة تظهر لك وحدك.',citizen:'راقب النقاش وصوّت لاكتشاف المافيا. ليس لديك إجراء ليلي.'} as Record<string,string>)[this.state?.me?.role||'']||''; }
   get nightInstruction():string { return !this.state?.me?.alive?'تابع بصمت حتى تنتهي إجراءات الليل.':this.roleDescription; }
   get speakingOrder():Player[] { return this.state?.players.filter(p=>p.alive)||[]; }
-  get citizenCount():number { const s=this.state;return s?Math.max(0,s.players.length-s.rolesConfig.mafia-s.rolesConfig.doctor-s.rolesConfig.detective):0; }
-  get configIssue():string { const s=this.state;if(!s)return '';const c=s.rolesConfig;if(s.players.length<4)return 'تحتاج اللعبة أربعة لاعبين على الأقل.';if(s.players.some(p=>!p.online))return 'يوجد لاعب غير متصل. انتظره أو أزله من إدارة الغرفة.';if(c.mafia<1||c.mafia*2>=s.players.length||c.mafia+c.doctor+c.detective>s.players.length)return 'عدّل توزيع الأدوار من إدارة الغرفة ليناسب عدد اللاعبين.';return ''; }
+  get citizenCount():number { const s=this.state;return s?Math.max(0,s.players.length-s.rolesConfig.mafia-s.rolesConfig.doctor-s.rolesConfig.detective-s.rolesConfig.mayor):0; }
+  get configIssue():string { const s=this.state;if(!s)return '';const c=s.rolesConfig;if(s.players.length<4)return 'تحتاج اللعبة أربعة لاعبين على الأقل.';if(s.players.some(p=>!p.online))return 'يوجد لاعب غير متصل. انتظره أو أزله من إدارة الغرفة.';if(c.mafia<1||c.mafia*2>=s.players.length||c.mafia+c.doctor+c.detective+c.mayor>s.players.length)return 'عدّل توزيع الأدوار من إدارة الغرفة ليناسب عدد اللاعبين.';return ''; }
   get phaseName(): string { return ({lobby:'الردهة',night:'الليل',discussion:'النقاش',vote:'التصويت',defense:'الدفاع', 'final-vote':'التصويت النهائي',finished:'انتهت اللعبة'} as Record<string,string>)[this.state?.phase || ''] || ''; }
   get myName(): string { return this.user?.name || ''; }
   get currentSpeaker(): Player | undefined { return this.state?.players.find(p => p.id === this.state?.speakerId); }
   get defensePlayer(): Player | undefined { return this.state?.players.find(p => p.id === this.state?.defensePlayerId); }
-  get voteCounts(): Record<string,number> { const result:Record<string,number>={}; Object.values(this.state?.votes || {}).forEach(id => result[id]=(result[id]||0)+1); return result; }
-  private loadMe(): void { this.http.get<{user:User}>(`${this.api}/auth/me`, {headers:this.headers}).subscribe({next:r=>this.user=r.user,error:()=>this.logout()}); }
+  get voteCounts(): Record<string,number> { const result:Record<string,number>={}; Object.entries(this.state?.votes || {}).forEach(([voter,id]) => result[id]=(result[id]||0)+(this.state?.players.find(p=>p.id===voter)?.voteWeight||1)); return result; }
+  private loadMe(): void { this.http.get<{user:User}>(`${this.api}/auth/me`, {headers:this.headers}).subscribe({next:r=>{this.user=r.user;const saved=localStorage.getItem('mafia_room_'+r.user.id);if(saved){this.roomCode=saved;this.busy=true;this.connectRoom();}},error:e=>{if(e.status===401)this.logout();else this.error='تعذر استعادة الجلسة. أعد المحاولة عند عودة الاتصال.';}}); }
   get headers(): {Authorization:string} { return {Authorization:`Bearer ${this.token}`}; }
   loginGoogle(): void {
     this.error='';
@@ -70,8 +70,8 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
     this.socket=io(this.socketUrl,{auth:{token:this.token},transports:['websocket','polling']});
     this.socket.on('connect',()=>{this.connected=true;this.socket?.emit('room:join',{code:this.roomCode});});
     this.socket.on('disconnect',()=>{this.connected=false;this.closePeers();this.syncMediaPermissions();});
-    this.socket.on('connect_error',()=>{this.error='تعذر الاتصال بالسيرفر. تأكد أن Backend يعمل.';this.busy=false;});
-    this.socket.on('game:joined',()=>{this.busy=false;this.error='';this.publishMedia();});
+    this.socket.on('connect_error',()=>{this.error='تعذر الاتصال بالسيرفر. حاول مجددًا عند عودة الاتصال.';this.busy=false;});
+    this.socket.on('game:joined',()=>{this.busy=false;this.error='';if(this.user)localStorage.setItem('mafia_room_'+this.user.id,this.roomCode);this.publishMedia();});
     this.socket.on('game:state',(s:GameState)=>{if(this.state?.phase!==s.phase || this.state?.day!==s.day)this.roomTab='game';this.state=s;this.clockOffset=s.serverTime-Date.now();this.updateClock();this.ensurePeerConnections();this.syncMediaPermissions();});
     this.socket.on('game:error',(m:string)=>{this.error=m;this.busy=false;});
     this.socket.on('chat:message',(m:any)=>{this.chat=[...this.chat.slice(-39),m];});
@@ -84,16 +84,16 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
     this.socket.on('webrtc:offer',(p:SignalPayload)=>this.receiveOffer(p));this.socket.on('webrtc:answer',(p:SignalPayload)=>this.receiveAnswer(p));this.socket.on('webrtc:ice',(p:SignalPayload)=>this.receiveIce(p));
   }
   action(type:string, extra:Record<string,unknown>={}): void { if(!this.connected){this.error='الاتصال مقطوع، انتظر إعادة الاتصال.';return;}this.socket?.emit('game:action',{type,...extra}); }
-  updateConfig(key:'mafia'|'doctor'|'detective',value:string):void { if(!this.state)return;this.state.rolesConfig[key]=Math.max(0,Number(value)||0);this.action('game:config',{config:this.state.rolesConfig}); }
+  updateConfig(key:'mafia'|'doctor'|'detective'|'mayor',value:string):void { if(!this.state)return;this.state.rolesConfig[key]=Math.max(0,Number(value)||0);this.action('game:config',{config:this.state.rolesConfig}); }
   sendChat():void {const message=this.chatText.trim();if(!message)return;this.action('chat:message',{message});this.chatText='';}
   async toggleCamera():Promise<void>{await this.enableMedia(!this.cameraOn,this.micOn);}
-  async toggleMic():Promise<void>{await this.enableMedia(this.cameraOn,!this.micOn);}
+  async toggleMic():Promise<void>{if(this.state?.me?.silenced)return;await this.enableMedia(this.cameraOn,!this.micOn);}
   ngAfterViewChecked():void { if(this.localVideo?.nativeElement)this.localVideo.nativeElement.muted=true; if(this.localVideo?.nativeElement && this.localStream && this.localVideo.nativeElement.srcObject!==this.localStream) this.localVideo.nativeElement.srcObject=this.localStream; }
   async copyRoomCode():Promise<void> { try { await navigator.clipboard.writeText(this.roomCode);this.notice='تم نسخ كود الغرفة'; } catch {this.notice='كود الغرفة: '+this.roomCode;} }
   get aliveCount():number { return this.state?.players.filter(p=>p.alive).length || 0; }
   get canTransmit():boolean { return this.connected && Boolean(this.state?.me?.canSpeak); }
-  get micStatus():string { return !this.micOn?'المايك مغلق':this.canTransmit?'المايك مفتوح الآن':this.state?.phase==='lobby'?'جاهز — يفتح تلقائيًا عند دورك':'مكتوم تلقائيًا حتى دورك'; }
-  remoteMuted(id:string):boolean { return !this.connected || !(this.state?.phase==='lobby' || this.state?.phase==='discussion' && this.state.speakerId===id || this.state?.phase==='defense' && this.state.defensePlayerId===id); }
+  get micStatus():string { return this.state?.me?.silenced?'أُسكت ميكروفونك حتى نهاية الجولة — يمكنك التصويت':!this.micOn?'المايك مغلق':this.canTransmit?'المايك مفتوح الآن':this.state?.phase==='lobby'?'جاهز — يفتح تلقائيًا عند دورك':'مكتوم تلقائيًا حتى دورك'; }
+  remoteMuted(id:string):boolean { return !this.connected || !this.state?.players.find(p=>p.id===id)?.alive || Boolean(this.state?.players.find(p=>p.id===id)?.silenced) || !(this.state?.phase==='lobby' || this.state?.phase==='discussion' && this.state.speakerId===id || this.state?.phase==='defense' && this.state.defensePlayerId===id); }
   private syncMediaPermissions():void { this.localStream?.getAudioTracks().forEach(t=>t.enabled=this.micOn && this.canTransmit); }
   private async enableMedia(video:boolean,audio:boolean):Promise<void>{
     if(this.mediaBusy)return;
@@ -104,7 +104,7 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
       const needVideo=video&&!this.localStream.getVideoTracks().length;
       const needAudio=audio&&!this.localStream.getAudioTracks().length;
       if(needVideo||needAudio){
-        const stream=await navigator.mediaDevices.getUserMedia({video:needVideo?{width:{ideal:640},height:{ideal:360},frameRate:{ideal:15,max:24},facingMode:'user'}:false,audio:needAudio?{echoCancellation:true,noiseSuppression:true}:false});
+        const stream=await navigator.mediaDevices.getUserMedia({video:needVideo?{width:{ideal:640},height:{ideal:360},frameRate:{ideal:15,max:24},facingMode:'user'}:false,audio:needAudio?{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}:false});
         if(session!==this.mediaSession){stream.getTracks().forEach(t=>t.stop());return;}
         stream.getTracks().forEach(track=>{
           track.enabled=false;this.localStream!.addTrack(track);
@@ -229,8 +229,8 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
       await pc.addIceCandidate(p.candidate);
     }catch{ /* Obsolete ICE can arrive while a connection is being replaced. */ }
   }
-  private updateClock():void {if(this.clock)clearInterval(this.clock);const tick=()=>{const end=this.state?.phase==='discussion'?this.state.speakerEndsAt:this.state?.phase==='defense'?this.state.defenseEndsAt:this.state?.phase==='vote'?this.state.voteEndsAt:null;this.secondsLeft=end?Math.max(0,Math.ceil((end-Date.now()-this.clockOffset)/1000)):0;};tick();this.clock=setInterval(tick,500);}
-  leaveRoom():void{this.dismissedAnnouncement=0;this.roomTab='game';this.leaveConfirm=false;this.mediaSession++;this.connected=false;this.busy=false;if(this.clock)clearInterval(this.clock);this.closePeers();this.socket?.disconnect();this.socket=null;this.peers.forEach(p=>p.close());this.peers.clear();this.remoteVideos=[];this.localStream?.getTracks().forEach(t=>t.stop());this.localStream=null;this.cameraOn=false;this.micOn=false;this.state=null;this.chat=[];}
-  ngOnDestroy():void{this.leaveRoom();if(this.clock)clearInterval(this.clock);}
+  private updateClock():void {const tick=()=>{const end=this.state?.phase==='discussion'?this.state.speakerEndsAt:this.state?.phase==='defense'?this.state.defenseEndsAt:this.state?.phase==='vote'?this.state.voteEndsAt:null;this.secondsLeft=end?Math.max(0,Math.ceil((end-Date.now()-this.clockOffset)/1000)):0;};tick();if(!this.clock)this.clock=setInterval(tick,1000);}
+  leaveRoom(forget=true):void{if(forget && this.user)localStorage.removeItem('mafia_room_'+this.user.id);this.dismissedAnnouncement=0;this.roomTab='game';this.leaveConfirm=false;this.mediaSession++;this.connected=false;this.busy=false;if(this.clock)clearInterval(this.clock);this.clock=undefined;this.closePeers();this.socket?.disconnect();this.socket=null;this.peers.forEach(p=>p.close());this.peers.clear();this.remoteVideos=[];this.localStream?.getTracks().forEach(t=>t.stop());this.localStream=null;this.cameraOn=false;this.micOn=false;this.state=null;this.chat=[];}
+  ngOnDestroy():void{this.leaveRoom(false);if(this.clock)clearInterval(this.clock);}
 }
 

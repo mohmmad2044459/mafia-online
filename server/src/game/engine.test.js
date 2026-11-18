@@ -24,3 +24,36 @@ test('doctor cannot protect same player (or self) two nights in a row, but can a
   g.nightActions={'1':'1'};resolveNight(g);assert.equal(g.players.get('1').lastProtectedId,'1');
   g.nightActions={};resolveNight(g);assert.equal(g.players.get('1').lastProtectedId,null);
 });
+
+test('mayor reveal is public, idempotent, and weights an existing ballot',async()=>{
+ const {revealMayor}=await import('./engine.js');const g=game();g.players.get('1').role='mayor';beginVote(g);castVote(g,'1','2',g.voteRound);castVote(g,'0','3',g.voteRound);castVote(g,'4','3',g.voteRound);
+ assert.equal(publicState(g,'0').players.find(p=>p.id==='1').role,null);
+ revealMayor(g,'1');revealMayor(g,'1');assert.equal(g.log.filter(x=>x.text.includes('بطاقة العمدة')).length,1);
+ assert.equal(publicState(g,'0').players.find(p=>p.id==='1').role,'mayor');assert.equal(publicState(g,'0').players.find(p=>p.id==='1').voteWeight,3);
+ resolveVote(g);assert.equal(g.defensePlayerId,'2');assert.throws(()=>revealMayor(g,'0'));
+ g.players.get('1').alive=false;assert.throws(()=>revealMayor(g,'1'));
+});
+test('silencer mutes either team through defense, allows voting, expires next night',async()=>{
+ const {finishDay,isSilenced}=await import('./engine.js');for(const target of ['0','2']){const g=game();g.day=1;g.players.get('1').role='silencer';g.nightActions={'1':target};resolveNight(g);
+ assert.equal(isSilenced(g,g.players.get(target)),true);g.phase='defense';g.defensePlayerId=target;assert.equal(publicState(g,target).me.canSpeak,false);
+ beginVote(g);castVote(g,target,'4',g.voteRound);assert.equal(g.votes[target],'4');finishDay(g);assert.equal(isSilenced(g,g.players.get(target)),false);}
+});
+test('boss kills, silencer does not kill, detective recognizes both mafia roles',()=>{
+ const g=game();g.players.set('5',{id:'5',name:'لاعب',alive:true,online:true,role:'citizen'});g.players.get('0').role='mafia_boss';g.players.get('1').role='silencer';g.players.get('4').role='detective';g.nightActions={'0':'2','1':'3','4':'1'};resolveNight(g);
+ assert.equal(g.players.get('2').alive,false);assert.equal(g.players.get('3').alive,true);assert.equal(g.players.get('4').results[0].isMafia,true);
+ assert.equal(publicState(g,'0').players.find(p=>p.id==='1').role,'silencer');assert.equal(publicState(g,'3').players.find(p=>p.id==='1').role,null);
+});
+test('multiple mafia allocation includes boss and silencer within configured total',()=>{
+ const g=game();for(let i=5;i<8;i++)g.players.set(String(i),{id:String(i),alive:true,online:true});g.rolesConfig={mafia:2,doctor:1,detective:1,mayor:1};startGame(g);
+ const roles=[...g.players.values()].map(p=>p.role);assert.equal(roles.filter(r=>r==='mafia_boss').length,1);assert.equal(roles.filter(r=>r==='silencer').length,1);assert.equal(roles.filter(r=>r==='mayor').length,1);
+});
+test('silencer counts toward mafia victory and does not leak to civilians',async()=>{
+ const {checkWinner}=await import('./engine.js');const g=game();g.players.get('0').role='silencer';assert.equal(checkWinner(g),false);g.players.get('1').alive=false;g.players.get('2').alive=false;g.players.get('3').alive=false;assert.equal(checkWinner(g),true);assert.equal(g.winner,'mafia');
+});
+
+
+test('mayor can reveal in every active phase but not outside a running game',async()=>{
+ const {revealMayor}=await import('./engine.js');for(const phase of ['night','discussion','vote','defense']){const g=game();g.phase=phase;g.players.get('1').role='mayor';revealMayor(g,'1');assert.equal(g.players.get('1').revealed,true);}
+ for(const phase of ['lobby','finished']){const g=game();g.phase=phase;g.players.get('1').role='mayor';assert.throws(()=>revealMayor(g,'1'));}
+});
+test('starting a new game clears silence and prior reveal',()=>{const g=game();for(const p of g.players.values()){p.silencedDay=1;p.revealed=true;}startGame(g);assert.ok([...g.players.values()].every(p=>p.silencedDay===null && !p.revealed));});
