@@ -104,5 +104,4 @@
     </div>
     <div class="media-dock"><span class="dock-status">{{mediaBusy?'جارٍ فتح الجهاز…':micStatus}}</span><div><button class="secondary" [class.enabled]="micOn" [attr.aria-pressed]="micOn" [disabled]="mediaBusy || !connected || s.me?.silenced" (click)="toggleMic()">{{micOn?'إغلاق المايك':'فتح المايك'}}</button><button class="secondary" [class.enabled]="cameraOn" [attr.aria-pressed]="cameraOn" [disabled]="mediaBusy || !connected" (click)="toggleCamera()">{{cameraOn?'إغلاق الكاميرا':'فتح الكاميرا'}}</button></div></div>
   </section>
-  <footer><nav class="mt-9 mb-3 flex flex-wrap justify-center gap-5 text-[13px]" aria-label="روابط الموقع"><a class="text-brass-400 underline underline-offset-4 hover:text-brass-300" href="/">لعبة مافيا أونلاين</a><a class="text-brass-400 underline underline-offset-4 hover:text-brass-300" href="/rules/">قواعد وأدوار المافيا</a></nav>مافيا / سهرة مع أصحابك</footer>
 </main>
