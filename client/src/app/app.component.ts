@@ -3,6 +3,7 @@ import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { AfterViewChecked, Component, ElementRef, NgZone, OnDestroy, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { io, Socket } from 'socket.io-client';
+import { retry, throwError, timeout, timer } from 'rxjs';
 import { environment } from '../environments/environment';
 
 declare global { interface Window { google?: any; } }
@@ -23,7 +24,11 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
   remoteVideos: {id:string;name:string;stream:MediaStream}[] = [];
   private peers = new Map<string, RTCPeerConnection>(); chat: {name:string;message:string;at:number}[] = []; chatText = '';
   secondsLeft = 0; connected = false; mediaBusy = false; private clockOffset = 0; private mediaSession = 0; private pendingIce = new Map<string, RTCIceCandidateInit[]>(); private clock?: ReturnType<typeof setInterval>;
-  constructor(private http: HttpClient, private zone:NgZone) { if (this.token) this.loadMe(); }
+  loggingIn=false; restoring=false; private googleReady=false;
+  constructor(private http: HttpClient, private zone:NgZone) {
+    if (this.token) { this.restoring=true; this.loadMe(); }
+    else this.http.get(`${this.api}/health`).subscribe({error:()=>{}}); // نصحّي السيرفر (Render) من أول ما تنفتح الصفحة
+  }
   leaveConfirm = false;
   roomTab:'game'|'players'|'more'='game';
   dismissedAnnouncement=0;
@@ -33,6 +38,12 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
   private retryTimers=new Map<string,ReturnType<typeof setTimeout>>();
   get visibleAnnouncement(){const a=this.state?.announcement;return a && a.id!==this.dismissedAnnouncement?a:null;}
   castVote(targetId:string):void{this.action('vote:cast',{targetId,voteRound:this.state?.voteRound});}
+  // مين صوّت على هاللاعب (أو على 'skip' يعني امتنع)
+  votersFor(target:string):Player[]{const votes=this.state?.votes||{};return (this.state?.players||[]).filter(p=>votes[p.id]===target);}
+  // أسماء المصوتين نصًا، والعمدة المكشوف بيطلع جنب اسمه (×3)
+  votersText(target:string):string{return this.votersFor(target).map(p=>p.voteWeight>1?`${p.name} (×${p.voteWeight})`:p.name).join('، ');}
+  votesLabel(n:number):string{return n===0?'0 أصوات':n===1?'صوت واحد':n===2?'صوتان':`${n} أصوات`;}
+  get speechTotal():number{return this.state?.phase==='defense'?60:45;} // مدة المتحدث/الدفاع بالثواني (لشريط الوقت)
   publishMedia():void{this.socket?.emit('media:state',{cameraOn:this.cameraOn,micOn:this.micOn});}
   async playMedia():Promise<void>{
     const videos=document.querySelectorAll<HTMLMediaElement>('video,audio');
@@ -53,14 +64,40 @@ export class AppComponent implements OnDestroy, AfterViewChecked {
   get currentSpeaker(): Player | undefined { return this.state?.players.find(p => p.id === this.state?.speakerId); }
   get defensePlayer(): Player | undefined { return this.state?.players.find(p => p.id === this.state?.defensePlayerId); }
   get voteCounts(): Record<string,number> { const result:Record<string,number>={}; Object.entries(this.state?.votes || {}).forEach(([voter,id]) => result[id]=(result[id]||0)+(this.state?.players.find(p=>p.id===voter)?.voteWeight||1)); return result; }
-  private loadMe(): void { this.http.get<{user:User}>(`${this.api}/auth/me`, {headers:this.headers}).subscribe({next:r=>{this.user=r.user;const saved=localStorage.getItem('mafia_room_'+r.user.id);if(saved){this.roomCode=saved;this.busy=true;this.connectRoom();}},error:e=>{if(e.status===401)this.logout();else this.error='تعذر استعادة الجلسة. أعد المحاولة عند عودة الاتصال.';}}); }
+  private loadMe(): void { this.http.get<{user:User}>(`${this.api}/auth/me`, {headers:this.headers}).subscribe({next:r=>{this.restoring=false;this.user=r.user;const saved=localStorage.getItem('mafia_room_'+r.user.id);if(saved){this.roomCode=saved;this.busy=true;this.connectRoom();}},error:e=>{this.restoring=false;if(e.status===401)this.logout();else this.error='تعذر استعادة الجلسة. أعد المحاولة عند عودة الاتصال.';}}); }
   get headers(): {Authorization:string} { return {Authorization:`Bearer ${this.token}`}; }
-  loginGoogle(): void {
-    this.error='';
-    const clientId = environment.googleClientId;
-    if (clientId.startsWith('YOUR_') || !window.google?.accounts?.id) { this.error='أضف Google OAuth Client ID داخل client/src/environments/environment.ts وتأكد من تحميل Google Identity Services.'; return; }
-    window.google.accounts.id.initialize({client_id:clientId,callback:(response:any)=>this.http.post<any>(`${this.api}/auth/google`,{credential:response.credential}).subscribe({next:r=>{this.token=r.token;localStorage.setItem('mafia_token',this.token);this.user=r.user;this.error='';},error:e=>this.error=e.error?.message||'فشل تسجيل الدخول'})});
-    window.google.accounts.id.prompt();
+  // ===== تسجيل الدخول بـ Google =====
+  // زر Google الرسمي بنرسمه جوّا الـ div اللي اسمه googleBtn (موجود بملف الـ HTML)
+  @ViewChild('googleBtn') set googleBtn(ref: ElementRef<HTMLElement> | undefined) {
+    if (ref) this.setupGoogle(ref.nativeElement);
+  }
+  private setupGoogle(box: HTMLElement, tries = 0): void {
+    const gsi = window.google?.accounts?.id;
+    if (!gsi) { // سكربت Google لسا ما خلص تحميل: نعيد المحاولة كل 0.2 ثانية
+      if (tries < 50) setTimeout(() => this.setupGoogle(box, tries + 1), 200);
+      else this.error = 'تعذر تحميل خدمة Google. تأكد من الإنترنت وحدّث الصفحة.';
+      return;
+    }
+    if (!this.googleReady) { // التجهيز بيصير مرة وحدة بس
+      gsi.initialize({ client_id: environment.googleClientId, callback: (r: any) => this.zone.run(() => this.onGoogleCredential(r.credential)) });
+      this.googleReady = true;
+    }
+    box.innerHTML = '';
+    gsi.renderButton(box, { theme: 'filled_black', size: 'large', text: 'continue_with', shape: 'rectangular', locale: 'ar', width: 280 });
+  }
+  // Google رجّع لنا "credential" => منرسله للسيرفر ليتأكد منه ويعطينا token
+  private onGoogleCredential(credential: string): void {
+    this.loggingIn = true; this.error = ''; this.notice = '';
+    // السيرفر المجاني بينام، فأول طلب ممكن ياخد وقت: منفهّم المستخدم إنه لازم يستنى
+    const wakeNote = setTimeout(() => { if (this.loggingIn) this.notice = 'السيرفر عم يصحى من النوم، ممكن ياخد لحد دقيقة. لا تسكّر الصفحة.'; }, 4000);
+    this.http.post<any>(`${this.api}/auth/google`, { credential }).pipe(
+      timeout(90000),
+      // لو السيرفر لسا بيصحى (خطأ 502/503/504 أو ما في اتصال) منعيد المحاولة تلقائيًا لحد 3 مرات
+      retry({ count: 3, delay: (e: any) => [0, 502, 503, 504].includes(e?.status) ? timer(3000) : throwError(() => e) })
+    ).subscribe({
+      next: r => { clearTimeout(wakeNote); this.loggingIn = false; this.notice = ''; this.token = r.token; localStorage.setItem('mafia_token', this.token); this.user = r.user; this.error = ''; },
+      error: e => { clearTimeout(wakeNote); this.loggingIn = false; this.notice = ''; this.error = e?.error?.message || 'السيرفر ما ردّ. جرّب مرة ثانية بعد شوي.'; }
+    });
   }
   logout(): void { this.leaveRoom(); this.user=null;this.token='';localStorage.removeItem('mafia_token'); }
   createRoom(): void { this.busy=true;this.error='';this.http.post<any>(`${this.api}/rooms`,{maxPlayers:this.newRoomMax,isPrivate:this.isPrivate},{headers:this.headers}).subscribe({next:r=>{this.roomCode=r.room.code;this.connectRoom();},error:e=>{this.error=e.error?.message||'تعذر إنشاء الغرفة';this.busy=false;}}); }

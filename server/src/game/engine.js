@@ -1,7 +1,7 @@
-// Phase lengths (ms): normal speaker 1:15, vote 0:45, defense 1:30.
-export const SPEAK_MS = 75000;
+// Phase lengths (ms): normal speaker 0:45, vote 0:45, defense 1:00.
+export const SPEAK_MS = 45000;
 export const VOTE_MS = 45000;
-export const DEFENSE_MS = 90000;
+export const DEFENSE_MS = 60000;
 const ROLE_NAMES = { mafia: 'مافيا', mafia_boss: 'زعيم المافيا', silencer: 'المُسكِت', mayor: 'العمدة', doctor: 'الدكتور', detective: 'المحقق', citizen: 'مواطن' };
 const shuffle = (items) => { const a = [...items]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
@@ -122,7 +122,7 @@ export function resolveVote(g) {
     if(!checkWinner(g))finishDay(g);
   } else {
     g.phase='defense';g.defensePlayerId=target.id;g.defenseEndsAt=Date.now()+DEFENSE_MS;
-    addLog(g,`${target.name} لديه دقيقة ونصف للدفاع، ثم يصوّت الجميع مجددًا.`);
+    addLog(g,`${target.name} لديه دقيقة للدفاع، ثم يصوّت الجميع مجددًا.`);
   }
 }
 export function announce(g, kind, title, message, player=null) {

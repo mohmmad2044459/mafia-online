@@ -84,3 +84,17 @@ button,input,select{touch-action:manipulation}
 button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--color-brass-400);outline-offset:3px}
 @media(max-width:639px){.field{font-size:16px}.media-dock{padding-bottom:calc(12px + env(safe-area-inset-bottom))}.room{padding-bottom:130px}.choices{grid-template-columns:repeat(2,minmax(0,1fr))}.choice{min-height:52px;padding:12px}.role-inputs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.mayor-banner .primary{width:100%}.room-tabs button{min-height:48px}.room-bar{gap:8px;flex-wrap:wrap}.stage{padding:16px}.speaker-heading h1{overflow-wrap:anywhere;font-size:24px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+/* مرآة للكاميرا: بس لمعاينتي أنا (الباقي بيشوفوني عادي) */
+.seat video.mirror{transform:scaleX(-1)}
+/* التصويت: أسماء المصوتين تحت اسم اللاعب */
+.choice-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.choice-main small{font-size:11px;line-height:1.6;color:var(--color-brass-300)}
+.players-vote{margin-bottom:16px}
+.seat-vote{display:grid;gap:6px;margin-top:2px}
+.seat-vote-count{display:flex;align-items:baseline;gap:8px;min-height:24px;font-size:11px;color:var(--color-bone-300);line-height:1.6}
+.seat-vote-count b{font-size:20px;color:var(--color-brass-300)}
+.seat-vote button{min-height:40px;padding:8px;font-size:13px}
+/* تسجيل الدخول */
+.google-login{min-height:44px;margin-top:8px}
+.google-login.busy{opacity:.5;pointer-events:none}
+.login-note{color:var(--color-brass-300);font-size:14px;line-height:1.8;margin-top:12px}
